@@ -1,6 +1,6 @@
-use crate::{Direction, PlayerAction, SpatialDirection, TemporalDirection};
+use crate::{Direction, PlayerAction, PlayerStatus, SpatialDirection, TemporalDirection};
 
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Copy, Clone)]
 // pub enum TileState {
 //     #[default]
 //     Empty,
@@ -19,6 +19,7 @@ use crate::{Direction, PlayerAction, SpatialDirection, TemporalDirection};
 
 pub struct TileState {
     player: Option<u8>,
+    player_status: Option<PlayerStatus>,
     hazard: bool,
 }
 impl TileState {
@@ -30,6 +31,13 @@ impl TileState {
     }
     pub fn is_hazard(&self) -> bool {
         self.hazard
+    }
+    pub fn status(&self) -> Option<PlayerStatus> {
+        self.player_status
+    }
+
+    pub fn set_status(&mut self, status: Option<PlayerStatus>) {
+        self.player_status = status;
     }
 
     pub fn char(&self) -> char {
@@ -45,12 +53,13 @@ impl TileState {
     fn player(player_id: u8) -> Self {
         TileState {
             player: Some(player_id),
+            player_status: None,
             hazard: false,
         }
     }
 }
 
-pub const SIZE: usize = 5;
+pub const SIZE: usize = 7;
 pub const LENGTH: usize = 5;
 
 #[derive(Debug, Clone)]
@@ -107,12 +116,12 @@ impl Board {
     pub const SPAWNS: [Stamp; 2] = [
         Stamp {
             x: SIZE / 2,
-            y: 0,
+            y: 1,
             t: 0,
         },
         Stamp {
             x: SIZE / 2,
-            y: SIZE - 1,
+            y: SIZE - 2,
             t: 0,
         },
     ];
@@ -144,6 +153,13 @@ impl Board {
             return self.states[stamp.t].set(stamp.x, stamp.y, state);
         }
         false
+    }
+    pub fn set_status(&mut self, stamp: Stamp, status: Option<PlayerStatus>) {
+        if stamp.t < LENGTH {
+            if let Ok(tile) = self.states[stamp.t].get_mut(stamp.x, stamp.y) {
+                tile.set_status(status);
+            };
+        }
     }
 
     pub fn states(&self) -> &[BoardState; LENGTH] {

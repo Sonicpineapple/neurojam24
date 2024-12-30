@@ -17,18 +17,18 @@ mod draw;
 /// Native main function
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result {
-    // disabled for dev
-    // std::panic::set_hook(Box::new(|panic_info| {
-    //     let title = "The game crashed!";
-    //     let backtrace = std::backtrace::Backtrace::force_capture();
-    //     let contents = format!("{title}\n\n{panic_info}\n\n{backtrace}");
-    //     rfd::MessageDialog::new()
-    //         .set_level(rfd::MessageLevel::Error)
-    //         .set_title(title)
-    //         .set_description(contents)
-    //         .set_buttons(rfd::MessageButtons::Ok)
-    //         .show();
-    // }));
+    // disable for dev
+    std::panic::set_hook(Box::new(|panic_info| {
+        let title = "The game crashed!";
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        let contents = format!("{title}\n\n{panic_info}\n\n{backtrace}");
+        rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Error)
+            .set_title(title)
+            .set_description(contents)
+            .set_buttons(rfd::MessageButtons::Ok)
+            .show();
+    }));
 
     let native_options = eframe::NativeOptions {
         // follow_system_theme: false,
@@ -191,12 +191,13 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
+                ui.label("View time:");
                 ui.add(egui::Slider::new(&mut self.view_slice, 0..=(LENGTH - 1)));
-                if let Some(stati) = self.game_info.lock().unwrap().player_stati {
-                    for status in stati {
-                        ui.label(status.health.to_string());
-                    }
-                }
+                // if let Some(stati) = self.game_info.lock().unwrap().player_stati {
+                //     for status in stati {
+                //         ui.label(status.health.to_string());
+                //     }
+                // }
                 if let Some(result) = self.game_info.lock().unwrap().result {
                     ui.label(match result {
                         GameResult::Win(player_id) => format!("Win: {}", player_id),

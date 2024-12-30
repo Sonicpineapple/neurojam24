@@ -57,20 +57,27 @@ impl GameStatus {
         }
 
         // Follow each timeline again to process effects on each player
-        let mut check_damage = |player_id: usize, stamp| {
+        *player_stati = [PlayerStatus::new(); 2];
+        let mut check_damage = |player_id: usize, stamp, tick: bool| {
             if board.get(stamp).expect("Presumed valid").is_hazard() {
                 player_stati[player_id].damage();
+            }
+            board.set_status(stamp, Some(player_stati[player_id].clone()));
+            if tick {
+                player_stati[player_id].tick();
             }
         };
         for (player_id, player_actions) in player_actions.iter().enumerate() {
             for (source, _action, _impact) in player_actions {
-                check_damage(player_id, *source);
+                check_damage(player_id, *source, true);
             }
         }
         for (player_id, stamp) in player_locations.iter().enumerate() {
-            check_damage(player_id, *stamp);
+            check_damage(player_id, *stamp, false);
         }
-
+        // for status in player_stati.iter_mut() {
+        //     status.tick();
+        // }
         Ok(match player_stati.map(|s| s.health) {
             [0, 0] => Some(GameResult::Draw),
             [0, _] => Some(GameResult::Win(1)),
@@ -86,7 +93,13 @@ impl GameStatus {
         for (player_id, player_actions) in self.player_actions.iter().enumerate() {
             for (source, action, impact) in player_actions {
                 let current_tile = &mut data[source.t][source.y][source.x];
-                current_tile.set_player(player_id as u8, false).unwrap();
+                current_tile
+                    .set_player(
+                        player_id as u8,
+                        false,
+                        self.board.get(*source).expect("what").status().unwrap(),
+                    )
+                    .unwrap();
                 current_tile.set_outgoing(*action).unwrap();
 
                 let (target, player_id) = impact.player;
@@ -101,7 +114,7 @@ impl GameStatus {
         }
         for (player_id, stamp) in self.player_locations.iter().enumerate() {
             data[stamp.t][stamp.y][stamp.x]
-                .set_player(player_id as u8, true)
+                .set_player(player_id as u8, true, self.player_stati[player_id])
                 .unwrap();
         }
         data
@@ -116,12 +129,14 @@ pub enum TurnStatus {
 pub struct PlayerStatus {
     pub health: u8,
     pub iframes: u8,
+    pub time: usize,
 }
 impl PlayerStatus {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             health: 3,
             iframes: 0,
+            time: 0,
         }
     }
     pub fn is_vulnerable(&self) -> bool {
@@ -142,6 +157,7 @@ impl PlayerStatus {
         if self.iframes > 0 {
             self.iframes -= 1
         }
+        self.time += 1
     }
 }
 

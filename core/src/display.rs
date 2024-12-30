@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{PlayerAction, LENGTH, SIZE};
+use crate::{PlayerAction, PlayerStatus, LENGTH, SIZE};
 
 pub type DisplayData = [[[TileDisplayData; SIZE]; SIZE]; LENGTH];
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TileDisplayData {
-    player: Option<(u8, bool)>, // Which player is here and whether this is their "current" position
-    hazard: bool,               // Whether this tile will cause damage
-    outgoing: Option<PlayerAction>, // What action is happening in this cell
+    player: Option<(u8, bool, PlayerStatus)>, // Which player is here, their status, and whether this is their "current" position
+    hazard: bool,                             // Whether this tile will cause damage
+    outgoing: Option<PlayerAction>,           // What action is happening in this cell
     incoming: Vec<(u8, PlayerAction, bool)>, // What actions are about to affect this cell, who did them, and whether they are movement
 }
 impl TileDisplayData {
@@ -21,11 +21,16 @@ impl TileDisplayData {
         }
     }
 
-    pub fn set_player(&mut self, player_id: u8, active: bool) -> Result<(), ()> {
+    pub fn set_player(
+        &mut self,
+        player_id: u8,
+        active: bool,
+        status: PlayerStatus,
+    ) -> Result<(), ()> {
         if self.player.is_some() {
             return Err(());
         }
-        self.player = Some((player_id, active));
+        self.player = Some((player_id, active, status));
         Ok(())
     }
 
@@ -48,7 +53,7 @@ impl TileDisplayData {
         self.incoming.push((player_id, action, attack));
     }
 
-    pub fn player(&self) -> Option<(u8, bool)> {
+    pub fn player(&self) -> Option<(u8, bool, PlayerStatus)> {
         self.player
     }
     pub fn outgoing(&self) -> Option<PlayerAction> {

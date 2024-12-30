@@ -1,6 +1,6 @@
 use eframe::egui::{vec2, Color32, Label, Rect, RichText, Rounding, Stroke, Ui, Vec2};
 use neurojam24_core::{
-    ActionType, DisplayData, PlayerAction, SpatialDirection, TemporalDirection, SIZE,
+    ActionType, DisplayData, PlayerAction, PlayerStatus, SpatialDirection, TemporalDirection, SIZE,
 };
 
 use crate::Input;
@@ -15,17 +15,17 @@ pub fn draw_board(ui: &mut Ui, rect: Rect, display: &DisplayData, t: usize, inpu
                 min + vec2(i as f32 * unit, j as f32 * unit),
                 vec2(unit, unit),
             );
-            let col = if let Some((player_id, active)) = tile.player() {
+            let col = if let Some((player_id, active, status)) = tile.player() {
                 player_col(player_id, active)
             } else {
                 Color32::GRAY
             };
             ui.painter()
                 .rect(rect, Rounding::same(0.5), col, (5.0, Color32::DARK_GRAY));
-            if tile.is_attacked() {
-                ui.painter()
-                    .circle(rect.center(), unit / 4., Color32::ORANGE, Stroke::NONE);
-            }
+            // if tile.is_attacked() {
+            //     ui.painter()
+            //         .circle(rect.center(), unit / 4., Color32::ORANGE, Stroke::NONE);
+            // }
             if let Some(action) = tile.outgoing() {
                 let col = action_col(action);
                 let dir = action_dir(action) * arrow_length;
@@ -53,12 +53,15 @@ pub fn draw_board(ui: &mut Ui, rect: Rect, display: &DisplayData, t: usize, inpu
                     }
                 }
             }
+            if let Some((player_id, active, status)) = tile.player() {
+                draw_status(ui, rect, status);
+            }
             if let Some(input) = input {
-                if tile
-                    .player()
-                    .is_some_and(|(player_id, active)| active && player_id == input.player_id)
-                {
-                    draw_input(ui, rect, &input);
+                if let Some((player_id, active, status)) = tile.player() {
+                    if active && player_id == input.player_id {
+                        draw_input(ui, rect, &input);
+                        // draw_status(ui, rect, status);
+                    }
                 }
             }
         }
@@ -108,6 +111,8 @@ fn spatial_dir(spatial: SpatialDirection) -> Vec2 {
 
 pub fn draw_input(ui: &mut Ui, rect: Rect, input: &Input) {
     let (cen, size) = (rect.center(), rect.size());
+    let diag = size.length();
+    let k = 2. / 3.;
     let arrow_col = match input.temporal {
         Some(temporal) => move_col(temporal),
         None => Color32::BLACK,
@@ -116,7 +121,7 @@ pub fn draw_input(ui: &mut Ui, rect: Rect, input: &Input) {
         Some(spatial) => {
             let arrow_dir = spatial_dir(spatial);
             ui.painter()
-                .arrow(cen, arrow_dir * size.min_elem() / 3., (5., arrow_col));
+                .arrow(cen, arrow_dir * size.min_elem() / 3., (3., arrow_col));
         }
         None => {
             ui.painter()
@@ -129,11 +134,14 @@ pub fn draw_input(ui: &mut Ui, rect: Rect, input: &Input) {
             ActionType::Attack => '⚔',
         };
         ui.put(
-            Rect::from_center_size(cen + vec2(1., 1.) * size.y / 4., vec2(size.x, size.y / 6.)),
+            Rect::from_center_size(
+                cen + vec2(1., 1.).normalized() * diag * k / 2.,
+                size * k / 2.,
+            ),
             Label::new(
                 RichText::new(char)
                     .color(Color32::BLACK)
-                    .size((32. as f32).min(size.y / 2.)),
+                    .size(size.y * k / 4.),
             ),
         );
     }
@@ -142,4 +150,28 @@ pub fn draw_input(ui: &mut Ui, rect: Rect, input: &Input) {
     //     size.min_elem() / 12.,
     //     player_col(input.player_id, true),
     // );
+}
+pub fn draw_status(ui: &mut Ui, rect: Rect, status: PlayerStatus) {
+    let (cen, size) = (rect.center(), rect.size());
+    let diag = size.length();
+    let k = 2. / 3.;
+    let mut draw = |vec: Vec2, text: String| {
+        ui.put(
+            Rect::from_center_size(cen + vec.normalized() * diag * k / 2., size * k / 2.),
+            Label::new(
+                RichText::new(text)
+                    .color(Color32::BLACK)
+                    .size(size.y * k / 5.),
+            ),
+        );
+    };
+    draw(
+        vec2(1., -1.),
+        "❤\n".to_string() + &status.health.to_string(),
+    );
+    draw(
+        vec2(-1., -1.),
+        "🛡\n".to_string() + &status.iframes.to_string(),
+    );
+    draw(vec2(-1., 1.), "⏰\n".to_string() + &status.time.to_string());
 }

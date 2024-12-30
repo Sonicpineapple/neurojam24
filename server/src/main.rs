@@ -53,16 +53,18 @@ fn main() {
                 loop {
                     frame_time = std::time::Instant::now();
                     while let Ok(msg) = socket.read() {
-                        dbg!(&msg);
+                        // dbg!(&msg);
                         if msg.is_text() {
                             match NetBlob::deser(msg.into_text().expect("It should be").as_str()) {
                                 Ok(blob) => match blob {
                                     NetBlob::Join => {
+                                        println!("Join requested");
                                         let mut game_server = server_ref.lock().unwrap();
                                         if let Some(id) = (0..2).find(|&i| !game_server.player[i]) {
                                             if !game_server.player[id as usize] {
                                                 player_id = Some(id as u8);
                                                 game_server.player[id as usize] = true;
+                                                println!("Assigned id {}", id);
                                                 socket.send(Message::Text(
                                                     NetBlob::Assign(id as u8).ser().into(),
                                                 ));
@@ -72,6 +74,7 @@ fn main() {
                                     NetBlob::Assign(_) => todo!(),
                                     NetBlob::Action(action) => {
                                         if let Some(player_id) = player_id {
+                                            println!("Received move for player {}", player_id);
                                             let mut game_server = server_ref.lock().unwrap();
                                             game_server.set_input(player_id, action);
                                             if game_server.inputs.iter().all(|i| i.is_some()) {
@@ -87,15 +90,24 @@ fn main() {
                                                             game_server.needs_send[i] = true;
                                                         }
                                                     }
-                                                    Err(_) => {
-                                                        dbg!("Oops");
-                                                    }
+                                                    Err(error) => match error {
+                                                        neurojam24_core::Error::InvalidMove(
+                                                            reason,
+                                                        ) => {
+                                                            println!(
+                                                                "Invalid move (Reason: {})",
+                                                                reason
+                                                            );
+                                                            game_server.inputs = [None; 2];
+                                                        }
+                                                    },
                                                 }
                                             }
                                         }
                                     }
                                     NetBlob::Leave => {
                                         if let Some(player_id) = &mut player_id {
+                                            println!("Player {} left", player_id);
                                             server_ref.lock().unwrap().player
                                                 [*player_id as usize] = false;
                                         }
@@ -128,6 +140,12 @@ fn main() {
                                     .into(),
                             ));
                             if let Some(result) = game_server.result {
+                                match result {
+                                    GameResult::Win(player_id) => {
+                                        println!("Player {} wins", player_id)
+                                    }
+                                    GameResult::Draw => println!("Draw"),
+                                }
                                 socket.send(Message::Text(NetBlob::Result(result).ser().into()));
                             }
                             socket.send(Message::Text(NetBlob::Start.ser().into()));
