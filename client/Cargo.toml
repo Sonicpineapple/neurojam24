@@ -1,0 +1,16 @@
+[package]
+name = "neurojam24_client"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "client"
+path = "src/main.rs"
+
+[dependencies]
+eframe = "0.30.0"
+neurojam24_core = {path = "../core"}
+neurojam24_server = {path = "../server"}
+rfd = "0.15.1"
+tungstenite = "0.26.1"
+
