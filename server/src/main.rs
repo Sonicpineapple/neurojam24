@@ -11,22 +11,28 @@ pub struct Server {
     game_status: GameStatus,
     inputs: [Option<PlayerAction>; 2],
     needs_send: [bool; 2],
+    needs_step: bool,
     player: [bool; 2],
     result: Option<GameResult>,
+    message: Option<Message>,
 }
 impl Server {
     fn new() -> Self {
         let game_status = GameStatus::initial();
         let inputs = [None; 2];
         let needs_send = [true; 2];
+        let needs_step = false;
         let player = [false; 2];
         let result = None;
+        let message = None;
         Self {
             game_status,
             inputs,
+            needs_step,
             needs_send,
             player,
             result,
+            message,
         }
     }
 
@@ -39,6 +45,41 @@ const TICK_LENGTH: std::time::Duration = std::time::Duration::from_millis(5);
 
 fn main() {
     let game_server = Arc::new(Mutex::new(Server::new()));
+
+    let server_ref = game_server.clone();
+    spawn(move || loop {
+        let frame_time = std::time::Instant::now();
+
+        let mut game_server = server_ref.lock().unwrap();
+        if game_server.needs_step {
+            if game_server.inputs.iter().all(|i| i.is_some()) {
+                let inputs = game_server.inputs.map(|i| i.expect("verified"));
+                let res = game_server.game_status.push_actions(inputs);
+                match res {
+                    Ok(game_result) => {
+                        game_server.result = game_result;
+                        for i in 0..2 {
+                            game_server.needs_send[i] = true;
+                            game_server.inputs[i] = None;
+                        }
+                    }
+                    Err(error) => match error {
+                        neurojam24_core::Error::InvalidMove(reason) => {
+                            println!("Invalid move (Reason: {})", reason);
+                            game_server.inputs = [None; 2];
+                            game_server.message =
+                                Some(Message::Text(NetBlob::InvalidMove.ser().into()));
+                        }
+                    },
+                }
+            }
+            game_server.needs_step = false;
+        }
+
+        if frame_time.elapsed() < 10 * TICK_LENGTH {
+            std::thread::sleep(10 * TICK_LENGTH - frame_time.elapsed());
+        }
+    });
     let server = TcpListener::bind("0.0.0.0:4444").unwrap();
     server.set_nonblocking(true);
     for stream in server.incoming() {
@@ -77,32 +118,7 @@ fn main() {
                                             println!("Received move for player {}", player_id);
                                             let mut game_server = server_ref.lock().unwrap();
                                             game_server.set_input(player_id, action);
-                                            if game_server.inputs.iter().all(|i| i.is_some()) {
-                                                let inputs = game_server
-                                                    .inputs
-                                                    .map(|i| i.expect("verified"));
-                                                let res =
-                                                    game_server.game_status.push_actions(inputs);
-                                                match res {
-                                                    Ok(game_result) => {
-                                                        game_server.result = game_result;
-                                                        for i in 0..2 {
-                                                            game_server.needs_send[i] = true;
-                                                        }
-                                                    }
-                                                    Err(error) => match error {
-                                                        neurojam24_core::Error::InvalidMove(
-                                                            reason,
-                                                        ) => {
-                                                            println!(
-                                                                "Invalid move (Reason: {})",
-                                                                reason
-                                                            );
-                                                            game_server.inputs = [None; 2];
-                                                        }
-                                                    },
-                                                }
-                                            }
+                                            game_server.needs_step = true;
                                         }
                                     }
                                     NetBlob::Leave => {
@@ -117,6 +133,7 @@ fn main() {
                                     NetBlob::Stati(_) => todo!(),
                                     NetBlob::Result(_) => todo!(),
                                     NetBlob::Start => todo!(),
+                                    NetBlob::InvalidMove => todo!(),
                                 },
                                 Err(_) => {
                                     dbg!("Bad message");
@@ -150,7 +167,9 @@ fn main() {
                             }
                             socket.send(Message::Text(NetBlob::Start.ser().into()));
                             game_server.needs_send[player_id as usize] = false;
-                            game_server.inputs[player_id as usize] = None;
+                        }
+                        if let Some(message) = &game_server.message {
+                            socket.send(message.clone());
                         }
                     }
                     drop(game_server);

@@ -12,6 +12,7 @@ pub enum NetBlob {
     Result(GameResult),
     Stati([PlayerStatus; 2]),
     Start,
+    InvalidMove,
 }
 impl NetBlob {
     pub fn ser(&self) -> String {

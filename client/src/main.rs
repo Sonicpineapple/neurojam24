@@ -89,6 +89,7 @@ struct Info {
     player_stati: Option<[PlayerStatus; 2]>,
     inputs: [Option<Input>; 2],
     result: Option<GameResult>,
+    message: Option<GameMessage>,
 }
 impl Info {
     fn new() -> Self {
@@ -97,8 +98,15 @@ impl Info {
             player_stati: None,
             inputs: [None; 2],
             result: None,
+            message: None,
         }
     }
+}
+
+#[derive(Debug, Copy, Clone)]
+enum GameMessage {
+    InvalidMove,
+    MoveConfirmed(),
 }
 
 struct App {
@@ -135,20 +143,22 @@ impl App {
             socket
                 .send(Message::Text(NetBlob::Join.ser().into()))
                 .unwrap();
+            let mut sent_inputs = false;
             loop {
                 let frame_time = std::time::Instant::now();
-                let mut clear_input = false;
-                if let Some(input) =
-                    info_ref.lock().unwrap().inputs[0].and_then(|input| input.evaluate())
-                {
-                    socket.send(Message::Text(NetBlob::Action(input).ser().into()));
-                    clear_input = true;
+                if !sent_inputs {
+                    if let Some(input) =
+                        info_ref.lock().unwrap().inputs[0].and_then(|input| input.evaluate())
+                    {
+                        socket.send(Message::Text(NetBlob::Action(input).ser().into()));
+                        sent_inputs = true;
+                    }
                 }
-                if clear_input {
-                    if let Some(input) = &mut info_ref.lock().unwrap().inputs[0] {
-                        input.clear();
-                    };
-                }
+                // if sent_inputs {
+                //     if let Some(input) = &mut info_ref.lock().unwrap().inputs[0] {
+                //         input.clear();
+                //     };
+                // }
                 while let Ok(msg) = socket.read() {
                     if msg.is_text() {
                         match NetBlob::deser(msg.into_text().expect("It should be").as_str()) {
@@ -161,7 +171,13 @@ impl App {
                                 NetBlob::Action(_) => todo!(),
                                 NetBlob::Leave => todo!(),
                                 NetBlob::Display(data) => {
-                                    info_ref.lock().unwrap().display = Some(data);
+                                    let mut info = info_ref.lock().unwrap();
+                                    info.display = Some(data);
+                                    if let Some(input) = &mut info.inputs[0] {
+                                        input.clear();
+                                        sent_inputs = false;
+                                    };
+                                    info.message = None;
                                 }
                                 NetBlob::Stati(stati) => {
                                     info_ref.lock().unwrap().player_stati = Some(stati);
@@ -170,6 +186,14 @@ impl App {
                                     info_ref.lock().unwrap().result = Some(result);
                                 }
                                 NetBlob::Start => {}
+                                NetBlob::InvalidMove => {
+                                    let mut info = info_ref.lock().unwrap();
+                                    info.message = Some(GameMessage::InvalidMove);
+                                    if let Some(input) = &mut info.inputs[0] {
+                                        input.clear();
+                                        sent_inputs = false;
+                                    };
+                                }
                             },
                             Err(_) => todo!(),
                         }
@@ -198,6 +222,14 @@ impl eframe::App for App {
                 //         ui.label(status.health.to_string());
                 //     }
                 // }
+                if let Some(message) = self.game_info.lock().unwrap().message {
+                    ui.label(match message {
+                        GameMessage::InvalidMove => {
+                            format!("Invalid move by some player")
+                        }
+                        GameMessage::MoveConfirmed() => format!("Move confirmed"),
+                    });
+                }
                 if let Some(result) = self.game_info.lock().unwrap().result {
                     ui.label(match result {
                         GameResult::Win(player_id) => format!("Win: {}", player_id),
@@ -221,42 +253,46 @@ impl eframe::App for App {
                 })
             }
             if let Some(input) = &mut self.game_info.lock().unwrap().inputs[0] {
-                let space_controls = [
-                    (egui::Key::W, SpatialDirection::Up),
-                    (egui::Key::S, SpatialDirection::Down),
-                    (egui::Key::A, SpatialDirection::Left),
-                    (egui::Key::D, SpatialDirection::Right),
-                ];
-                bind(ui, &space_controls, &mut input.spatial);
-                let time_controls = [
-                    (egui::Key::Q, TemporalDirection::Backward),
-                    (egui::Key::E, TemporalDirection::Forward),
-                ];
-                bind(ui, &time_controls, &mut input.temporal);
-                let action_controls = [
-                    (egui::Key::X, ActionType::Attack),
-                    (egui::Key::Z, ActionType::Move),
-                ];
-                bind(ui, &action_controls, &mut input.action);
+                if !input.confirmed {
+                    let space_controls = [
+                        (egui::Key::W, SpatialDirection::Up),
+                        (egui::Key::S, SpatialDirection::Down),
+                        (egui::Key::A, SpatialDirection::Left),
+                        (egui::Key::D, SpatialDirection::Right),
+                    ];
+                    bind(ui, &space_controls, &mut input.spatial);
+                    let time_controls = [
+                        (egui::Key::Q, TemporalDirection::Backward),
+                        (egui::Key::E, TemporalDirection::Forward),
+                    ];
+                    bind(ui, &time_controls, &mut input.temporal);
+                    let action_controls = [
+                        (egui::Key::X, ActionType::Attack),
+                        (egui::Key::Z, ActionType::Move),
+                    ];
+                    bind(ui, &action_controls, &mut input.action);
+                }
             }
             if let Some(input) = &mut self.game_info.lock().unwrap().inputs[1] {
-                let space_controls = [
-                    (egui::Key::I, SpatialDirection::Up),
-                    (egui::Key::K, SpatialDirection::Down),
-                    (egui::Key::J, SpatialDirection::Left),
-                    (egui::Key::L, SpatialDirection::Right),
-                ];
-                bind(ui, &space_controls, &mut input.spatial);
-                let time_controls = [
-                    (egui::Key::U, TemporalDirection::Backward),
-                    (egui::Key::O, TemporalDirection::Forward),
-                ];
-                bind(ui, &time_controls, &mut input.temporal);
-                let action_controls = [
-                    (egui::Key::Comma, ActionType::Attack),
-                    (egui::Key::M, ActionType::Move),
-                ];
-                bind(ui, &action_controls, &mut input.action);
+                if !input.confirmed {
+                    let space_controls = [
+                        (egui::Key::I, SpatialDirection::Up),
+                        (egui::Key::K, SpatialDirection::Down),
+                        (egui::Key::J, SpatialDirection::Left),
+                        (egui::Key::L, SpatialDirection::Right),
+                    ];
+                    bind(ui, &space_controls, &mut input.spatial);
+                    let time_controls = [
+                        (egui::Key::U, TemporalDirection::Backward),
+                        (egui::Key::O, TemporalDirection::Forward),
+                    ];
+                    bind(ui, &time_controls, &mut input.temporal);
+                    let action_controls = [
+                        (egui::Key::Comma, ActionType::Attack),
+                        (egui::Key::M, ActionType::Move),
+                    ];
+                    bind(ui, &action_controls, &mut input.action);
+                }
             }
 
             if ui.input(|i| i.key_pressed(egui::Key::Space)) {
@@ -267,6 +303,7 @@ impl eframe::App for App {
                 if let Some(input) = &mut self.game_info.lock().unwrap().inputs[1] {
                     input.confirmed = true;
                 }
+                self.game_info.lock().unwrap().message = Some(GameMessage::MoveConfirmed());
             }
             // let display = self.game_status.display();
             let guard = self.game_info.lock().unwrap();
@@ -275,6 +312,7 @@ impl eframe::App for App {
                 player_stati,
                 inputs,
                 result,
+                message,
             } = &*guard;
             if let Some(display) = display {
                 draw_board(ui, rect, display, self.view_slice, inputs[0]);
